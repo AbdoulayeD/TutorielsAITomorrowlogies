@@ -26,7 +26,7 @@ def chat_interface(user_input):
     response = generate_chatbot_response(user_input)
     return response
 
-iface = gr.Interface(fn=chat_interface, inputs="text", outputs="text", title="Chatbot IA avec GT4-O-Mini")
+iface = gr.Interface(fn=chat_interface, inputs="text", outputs="text", title="Chatbot IA avec GPT-4o-mini")
 iface.launch()
 
 
