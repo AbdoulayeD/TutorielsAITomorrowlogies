@@ -1,3 +1,5 @@
+# Installer les libray openai et gradio avant d'executer 
+# pip install openai gradio
 from openai import OpenAI
 import gradio as gr
 
