@@ -1,0 +1,16 @@
+
+    Produit: T-shirt
+    Prix d'achat: 10€
+    Prix de vente: 25€
+    Stock: 50
+
+    Produit: Jeans
+    Prix d'achat: 30€
+    Prix de vente: 70€
+    Stock: 30
+
+    Produit: Chaussures
+    Prix d'achat: 40€
+    Prix de vente: 90€
+    Stock: 20
+    
