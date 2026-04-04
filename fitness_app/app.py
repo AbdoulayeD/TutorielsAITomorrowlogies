@@ -9,6 +9,8 @@ Deploy: streamlit run app.py  →  https://streamlit.io/cloud (free, web + mobil
 """
 
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import streamlit as st
 import pandas as pd
 from datetime import date
