@@ -13,9 +13,13 @@ from dotenv import load_dotenv
 load_dotenv()
 import streamlit as st
 
-# Streamlit Cloud exposes secrets via st.secrets, not os.environ
-if "GEMINI_API_KEY" in st.secrets:
-    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+# On Streamlit Cloud secrets come from st.secrets; locally from .env
+try:
+    for key in ("GEMINI_API_KEY", "DATABASE_URL"):
+        if key in st.secrets:
+            os.environ[key] = st.secrets[key]
+except Exception:
+    pass
 import pandas as pd
 from datetime import date
 
@@ -31,14 +35,14 @@ from database import (
 st.set_page_config(
     page_title="FitAI 💪",
     page_icon="💪",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 # Mobile-friendly tweaks + dark card style
 st.markdown("""
 <style>
-  .block-container { padding-top: 0.75rem; padding-bottom: 4rem; max-width: 700px; }
+  .block-container { padding-top: 0.75rem; padding-bottom: 4rem; }
   .stTabs [data-baseweb="tab-list"] { gap: 0; }
   .stTabs [data-baseweb="tab"] { font-size: 0.78rem; padding: 0.45rem 0.6rem; }
   div[data-testid="metric-container"] { background: #1e1e2e; border-radius: 10px; padding: 0.6rem; }

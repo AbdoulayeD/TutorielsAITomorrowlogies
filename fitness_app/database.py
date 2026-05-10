@@ -1,232 +1,226 @@
 """
-SQLite database layer for FitAI.
-All CRUD operations for users, sessions, exercises, and programs.
+PostgreSQL database layer for FitAI (Supabase).
 """
-import sqlite3
 import json
+import os
 import uuid
 import bcrypt
+import urllib.parse
+import psycopg2
+import psycopg2.extras
+import psycopg2.errors
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from contextlib import contextmanager
 
-DB_PATH = Path(__file__).parent / "fitness.db"
+
+def _connect():
+    result = urllib.parse.urlparse(os.environ["DATABASE_URL"])
+    return psycopg2.connect(
+        host=result.hostname,
+        port=result.port or 5432,
+        database=result.path.lstrip("/"),
+        user=result.username,
+        password=urllib.parse.unquote(result.password),
+        sslmode="require",
+    )
 
 
 @contextmanager
 def db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
+    con = _connect()
+    cur = con.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        yield con
+        yield cur
         con.commit()
+    except Exception:
+        con.rollback()
+        raise
     finally:
+        cur.close()
         con.close()
 
 
 def init_db():
     with db() as c:
-        c.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            email         TEXT    UNIQUE,
-            password_hash TEXT,
-            name          TEXT    NOT NULL,
-            age           INTEGER,
-            weight        REAL,
-            height        REAL,
-            goal          TEXT,
-            fitness_level TEXT,
-            is_premium    INTEGER DEFAULT 0,
-            created_at    TEXT    DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS sessions (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL,
-            date        TEXT    NOT NULL,
-            notes       TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        );
-        CREATE TABLE IF NOT EXISTS exercises (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id   INTEGER NOT NULL,
-            name         TEXT    NOT NULL,
-            sets         INTEGER,
-            reps         INTEGER,
-            weight       REAL,
-            duration_min REAL,
-            ex_type      TEXT    DEFAULT 'strength',
-            FOREIGN KEY (session_id) REFERENCES sessions(id)
-        );
-        CREATE TABLE IF NOT EXISTS programs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL,
-            name        TEXT    NOT NULL,
-            content     TEXT    NOT NULL,
-            is_ai       INTEGER DEFAULT 0,
-            created_at  TEXT    DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        );
-        CREATE TABLE IF NOT EXISTS auth_tokens (
-            token       TEXT    PRIMARY KEY,
-            user_id     INTEGER NOT NULL,
-            expires_at  TEXT    NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        );
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            SERIAL PRIMARY KEY,
+                email         TEXT UNIQUE,
+                password_hash TEXT,
+                name          TEXT NOT NULL,
+                age           INTEGER,
+                weight        REAL,
+                height        REAL,
+                goal          TEXT,
+                fitness_level TEXT,
+                is_premium    INTEGER DEFAULT 0,
+                created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+            )
         """)
-        # Migrate existing databases that lack the new auth columns
-        existing = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
-        if "email" not in existing:
-            c.execute("ALTER TABLE users ADD COLUMN email TEXT")
-            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL")
-        if "password_hash" not in existing:
-            c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id       SERIAL PRIMARY KEY,
+                user_id  INTEGER NOT NULL REFERENCES users(id),
+                date     TEXT NOT NULL,
+                notes    TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS exercises (
+                id           SERIAL PRIMARY KEY,
+                session_id   INTEGER NOT NULL REFERENCES sessions(id),
+                name         TEXT NOT NULL,
+                sets         INTEGER,
+                reps         INTEGER,
+                weight       REAL,
+                duration_min REAL,
+                ex_type      TEXT DEFAULT 'strength'
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS programs (
+                id         SERIAL PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id),
+                name       TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                is_ai      INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                token      TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id),
+                expires_at TEXT NOT NULL
+            )
+        """)
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
-def register_user(email: str, password: str, name: str, age: int, weight: float,
-                  height: float, goal: str, level: str) -> int | None:
-    """Create a new account. Returns user id, or None if email already exists."""
+def register_user(email, password, name, age, weight, height, goal, level):
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     try:
         with db() as c:
-            cur = c.execute(
+            c.execute(
                 "INSERT INTO users (email,password_hash,name,age,weight,height,goal,fitness_level) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                 (email.lower().strip(), pw_hash, name.strip(), age, weight, height, goal, level)
             )
-            return cur.lastrowid
-    except sqlite3.IntegrityError:
+            return c.fetchone()["id"]
+    except psycopg2.errors.UniqueViolation:
         return None
 
 
-def login_user(email: str, password: str) -> dict | None:
-    """Verify credentials. Returns user dict on success, None on failure."""
+def login_user(email, password):
     with db() as c:
-        row = c.execute(
-            "SELECT * FROM users WHERE email = ?", (email.lower().strip(),)
-        ).fetchone()
+        c.execute("SELECT * FROM users WHERE email = %s", (email.lower().strip(),))
+        row = c.fetchone()
     if row and row["password_hash"] and bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
         return dict(row)
     return None
 
 
-def create_auth_token(user_id: int, days: int = 30) -> str:
+def create_auth_token(user_id, days=30):
     token = str(uuid.uuid4())
     expires = (datetime.utcnow() + timedelta(days=days)).isoformat()
     with db() as c:
-        c.execute("INSERT INTO auth_tokens (token, user_id, expires_at) VALUES (?,?,?)",
+        c.execute("INSERT INTO auth_tokens (token,user_id,expires_at) VALUES (%s,%s,%s)",
                   (token, user_id, expires))
     return token
 
 
-def validate_auth_token(token: str) -> dict | None:
-    """Returns user dict if token is valid and not expired, else None."""
+def validate_auth_token(token):
     with db() as c:
-        row = c.execute(
+        c.execute(
             "SELECT u.* FROM auth_tokens t JOIN users u ON u.id = t.user_id "
-            "WHERE t.token = ? AND t.expires_at > ?",
+            "WHERE t.token = %s AND t.expires_at > %s",
             (token, datetime.utcnow().isoformat())
-        ).fetchone()
+        )
+        row = c.fetchone()
     return dict(row) if row else None
 
 
-def delete_auth_token(token: str):
+def delete_auth_token(token):
     with db() as c:
-        c.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
+        c.execute("DELETE FROM auth_tokens WHERE token = %s", (token,))
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────
 
-def get_users():
+def get_user(uid):
     with db() as c:
-        return [dict(r) for r in c.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()]
+        c.execute("SELECT * FROM users WHERE id = %s", (uid,))
+        row = c.fetchone()
+    return dict(row) if row else None
 
 
-def get_user(uid: int):
+def update_user(uid, **kwargs):
+    fields = ", ".join(f"{k}=%s" for k in kwargs)
     with db() as c:
-        r = c.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-        return dict(r) if r else None
-
-
-def create_user(name, age, weight, height, goal, level):
-    with db() as c:
-        cur = c.execute(
-            "INSERT INTO users (name,age,weight,height,goal,fitness_level) VALUES (?,?,?,?,?,?)",
-            (name, age, weight, height, goal, level)
-        )
-        return cur.lastrowid
-
-
-def update_user(uid: int, **kwargs):
-    fields = ", ".join(f"{k}=?" for k in kwargs)
-    with db() as c:
-        c.execute(f"UPDATE users SET {fields} WHERE id=?", (*kwargs.values(), uid))
+        c.execute(f"UPDATE users SET {fields} WHERE id=%s", (*kwargs.values(), uid))
 
 
 # ── Sessions & Exercises ───────────────────────────────────────────────────────
 
 def log_session(user_id, session_date, notes=""):
     with db() as c:
-        cur = c.execute(
-            "INSERT INTO sessions (user_id,date,notes) VALUES (?,?,?)",
+        c.execute(
+            "INSERT INTO sessions (user_id,date,notes) VALUES (%s,%s,%s) RETURNING id",
             (user_id, str(session_date), notes)
         )
-        return cur.lastrowid
+        return c.fetchone()["id"]
 
 
 def log_exercise(session_id, name, sets=None, reps=None, weight=None, duration=None, ex_type="strength"):
     with db() as c:
         c.execute(
-            "INSERT INTO exercises (session_id,name,sets,reps,weight,duration_min,ex_type) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO exercises (session_id,name,sets,reps,weight,duration_min,ex_type) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (session_id, name, sets, reps, weight, duration, ex_type)
         )
 
 
 def get_sessions(user_id, limit=30):
     with db() as c:
-        rows = c.execute("""
+        c.execute("""
             SELECT s.*, COUNT(e.id) as ex_count
             FROM sessions s LEFT JOIN exercises e ON e.session_id = s.id
-            WHERE s.user_id = ? GROUP BY s.id ORDER BY s.date DESC LIMIT ?
-        """, (user_id, limit)).fetchall()
-        return [dict(r) for r in rows]
+            WHERE s.user_id = %s GROUP BY s.id ORDER BY s.date DESC LIMIT %s
+        """, (user_id, limit))
+        return [dict(r) for r in c.fetchall()]
 
 
 def get_session_exercises(session_id):
     with db() as c:
-        return [dict(r) for r in c.execute(
-            "SELECT * FROM exercises WHERE session_id = ?", (session_id,)
-        ).fetchall()]
+        c.execute("SELECT * FROM exercises WHERE session_id = %s", (session_id,))
+        return [dict(r) for r in c.fetchall()]
 
 
 # ── Programs ───────────────────────────────────────────────────────────────────
 
 def save_program(user_id, name, content, is_ai=False):
     with db() as c:
-        cur = c.execute(
-            "INSERT INTO programs (user_id,name,content,is_ai) VALUES (?,?,?,?)",
+        c.execute(
+            "INSERT INTO programs (user_id,name,content,is_ai) VALUES (%s,%s,%s,%s) RETURNING id",
             (user_id, name, json.dumps(content), int(is_ai))
         )
-        return cur.lastrowid
+        return c.fetchone()["id"]
 
 
 def get_programs(user_id):
     with db() as c:
-        rows = c.execute(
-            "SELECT * FROM programs WHERE user_id=? ORDER BY created_at DESC", (user_id,)
-        ).fetchall()
+        c.execute("SELECT * FROM programs WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
+        rows = c.fetchall()
     return [dict(r) | {"content": json.loads(r["content"])} for r in rows]
 
 
 # ── Analytics ──────────────────────────────────────────────────────────────────
 
-def get_streak(user_id: int) -> int:
+def get_streak(user_id):
     with db() as c:
-        rows = c.execute(
-            "SELECT DISTINCT date FROM sessions WHERE user_id=? ORDER BY date DESC", (user_id,)
-        ).fetchall()
+        c.execute("SELECT DISTINCT date FROM sessions WHERE user_id=%s ORDER BY date DESC", (user_id,))
+        rows = c.fetchall()
     if not rows:
         return 0
     streak = 0
@@ -242,9 +236,10 @@ def get_streak(user_id: int) -> int:
 
 def get_exercise_history(user_id, exercise_name):
     with db() as c:
-        return [dict(r) for r in c.execute("""
+        c.execute("""
             SELECT e.*, s.date FROM exercises e
             JOIN sessions s ON s.id = e.session_id
-            WHERE s.user_id=? AND LOWER(e.name)=LOWER(?)
+            WHERE s.user_id=%s AND LOWER(e.name)=LOWER(%s)
             ORDER BY s.date
-        """, (user_id, exercise_name)).fetchall()]
+        """, (user_id, exercise_name))
+        return [dict(r) for r in c.fetchall()]
