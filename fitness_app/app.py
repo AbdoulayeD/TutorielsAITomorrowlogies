@@ -12,6 +12,10 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 import streamlit as st
+
+# Streamlit Cloud exposes secrets via st.secrets, not os.environ
+if "GEMINI_API_KEY" in st.secrets:
+    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
 import pandas as pd
 from datetime import date
 
