@@ -5,7 +5,6 @@ import json
 import os
 import uuid
 import bcrypt
-import urllib.parse
 import psycopg2
 import psycopg2.extras
 import psycopg2.errors
@@ -14,13 +13,12 @@ from contextlib import contextmanager
 
 
 def _connect():
-    result = urllib.parse.urlparse(os.environ["DATABASE_URL"])
     return psycopg2.connect(
-        host=result.hostname,
-        port=result.port or 5432,
-        database=result.path.lstrip("/"),
-        user=result.username,
-        password=urllib.parse.unquote(result.password),
+        host=os.environ["DB_HOST"],
+        port=int(os.environ.get("DB_PORT", 5432)),
+        database=os.environ.get("DB_NAME", "postgres"),
+        user=os.environ.get("DB_USER", "postgres"),
+        password=os.environ["DB_PASSWORD"],
         sslmode="require",
     )
 

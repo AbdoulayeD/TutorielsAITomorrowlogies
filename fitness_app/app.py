@@ -15,7 +15,7 @@ import streamlit as st
 
 # On Streamlit Cloud secrets come from st.secrets; locally from .env
 try:
-    for key in ("GEMINI_API_KEY", "DATABASE_URL"):
+    for key in ("GEMINI_API_KEY", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"):
         if key in st.secrets:
             os.environ[key] = st.secrets[key]
 except Exception:
