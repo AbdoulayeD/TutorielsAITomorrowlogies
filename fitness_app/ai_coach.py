@@ -106,6 +106,59 @@ Return ONLY valid JSON:
     return json.loads(_chat(prompt, model, json_mode=True))
 
 
+def generate_meal_plan(user: dict, days: int = 7, lang: str = "en", model: str = "gemini-2.0-flash") -> dict:
+    if lang == "fr":
+        prompt = f"""Crée un plan de repas de {days} jours pour :
+- Objectif : {user['goal']}
+- Poids : {user['weight']} kg, Âge : {user['age']} ans, Taille : {user['height']} cm
+- Niveau : {user['fitness_level']}
+
+Calcule les besoins caloriques et les macros adaptés. Max 4 repas par jour. Réponds UNIQUEMENT en JSON valide :
+{{
+  "daily_calories": 2500,
+  "macros": {{"protein_g": 180, "carbs_g": 280, "fat_g": 80}},
+  "days": [
+    {{
+      "day": "Lundi",
+      "meals": [
+        {{"meal": "Petit-déjeuner", "foods": ["Flocons d'avoine 80g", "3 œufs", "Banane"], "calories": 650, "protein_g": 35}},
+        {{"meal": "Déjeuner", "foods": ["Poulet 180g", "Riz 150g", "Brocoli"], "calories": 700, "protein_g": 55}},
+        {{"meal": "Collation", "foods": ["Yaourt grec 200g"], "calories": 200, "protein_g": 20}},
+        {{"meal": "Dîner", "foods": ["Saumon 200g", "Patate douce", "Épinards"], "calories": 750, "protein_g": 50}}
+      ]
+    }}
+  ],
+  "tips": ["conseil1", "conseil2", "conseil3"]
+}}
+Inclus les {days} jours."""
+    else:
+        prompt = f"""Create a {days}-day meal plan for:
+- Goal: {user['goal']}
+- Weight: {user['weight']}kg, Age: {user['age']}, Height: {user['height']}cm
+- Level: {user['fitness_level']}
+
+Calculate appropriate daily calories and macros. Max 4 meals per day. Return ONLY valid JSON:
+{{
+  "daily_calories": 2500,
+  "macros": {{"protein_g": 180, "carbs_g": 280, "fat_g": 80}},
+  "days": [
+    {{
+      "day": "Monday",
+      "meals": [
+        {{"meal": "Breakfast", "foods": ["Oats 80g", "3 eggs", "Banana"], "calories": 650, "protein_g": 35}},
+        {{"meal": "Lunch", "foods": ["Chicken 180g", "Rice 150g", "Broccoli"], "calories": 700, "protein_g": 55}},
+        {{"meal": "Snack", "foods": ["Greek yogurt 200g"], "calories": 200, "protein_g": 20}},
+        {{"meal": "Dinner", "foods": ["Salmon 200g", "Sweet potato", "Spinach"], "calories": 750, "protein_g": 50}}
+      ]
+    }}
+  ],
+  "tips": ["tip1", "tip2", "tip3"]
+}}
+Include all {days} days."""
+
+    return json.loads(_chat(prompt, model, json_mode=True))
+
+
 def ask_coach(user: dict, question: str, history: list = None, recent_sessions: list = None,
               model: str = "gemini-2.0-flash") -> str:
     profile = (
