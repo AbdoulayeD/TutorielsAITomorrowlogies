@@ -38,34 +38,35 @@ def generate_program(user: dict, weeks: int = 8, model: str = "gemini-2.0-flash"
 - Goal: {user['goal']}
 - Fitness level: {user['fitness_level']}
 
-Apply evidence-based principles: appropriate weekly volume (sets/muscle group),
-progressive overload, exercise selection matching goal and level, deload week every 4th week.
+Rules:
+- Week 1: include full day/exercise details (max 5 exercises per day, max 4 training days)
+- Weeks 2+: include only "week", "notes" (progression note), and "days" as a SHORT summary string, NO exercise lists
+- Every 4th week: deload note
 
-Return ONLY valid JSON with this structure:
+Return ONLY valid compact JSON:
 {{
   "program_name": "...",
-  "description": "2-3 sentences",
+  "description": "2 sentences max",
   "weeks": [
     {{
       "week": 1,
-      "notes": "focus / intensity note",
+      "notes": "base volume",
       "days": [
-        {{
-          "day": "Monday",
-          "focus": "e.g. Push / Upper / Full Body",
-          "exercises": [
-            {{"name": "Bench Press", "sets": 4, "reps": "6-8", "rest_sec": 120}},
-            {{"name": "Running", "duration_min": 20, "intensity": "moderate", "type": "cardio"}}
-          ]
-        }},
-        {{"day": "Tuesday", "focus": "Rest / Active Recovery", "exercises": []}}
+        {{"day": "Monday", "focus": "Push", "exercises": [
+          {{"name": "Bench Press", "sets": 4, "reps": "6-8", "rest_sec": 120}},
+          {{"name": "Running", "duration_min": 20, "intensity": "moderate", "type": "cardio"}}
+        ]}},
+        {{"day": "Tuesday", "focus": "Rest", "exercises": []}}
       ]
-    }}
+    }},
+    {{"week": 2, "notes": "add 1 set per compound lift", "days": "Same structure as week 1"}},
+    {{"week": 3, "notes": "+2.5kg on main lifts", "days": "Same structure as week 1"}},
+    {{"week": 4, "notes": "DELOAD — reduce volume by 40%", "days": "Same structure, half the sets"}}
   ],
   "tips": ["tip1", "tip2", "tip3"]
 }}
 
-Include all {weeks} weeks. Limit each day to 6 exercises max to keep the response concise."""
+Include all {weeks} weeks following that pattern."""
 
     return json.loads(_chat(prompt, model, json_mode=True))
 

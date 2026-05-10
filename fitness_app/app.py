@@ -398,13 +398,17 @@ with tab_prog:
                     # AI programs have a 'weeks' structure
                     for week in content.get("weeks", [])[:1]:
                         st.markdown(f"*Week {week['week']}* — {week.get('notes', '')}")
-                        for day in week.get("days", []):
-                            st.markdown(f"**{day.get('day', '')}** — {day.get('focus', '')}")
-                            for ex in day.get("exercises", [])[:5]:
-                                if "duration_min" in ex:
-                                    st.write(f"  • {ex['name']}: {ex.get('duration_min')} min")
-                                else:
-                                    st.write(f"  • {ex['name']}: {ex.get('sets')} × {ex.get('reps')}")
+                        days = week.get("days", [])
+                        if isinstance(days, str):
+                            st.caption(days)
+                        else:
+                            for day in days:
+                                st.markdown(f"**{day.get('day', '')}** — {day.get('focus', '')}")
+                                for ex in day.get("exercises", [])[:5]:
+                                    if "duration_min" in ex:
+                                        st.write(f"  • {ex['name']}: {ex.get('duration_min')} min")
+                                    else:
+                                        st.write(f"  • {ex['name']}: {ex.get('sets')} × {ex.get('reps')}")
 
 # ═══════════════════════════════════════════════════════
 # TAB 4 — PROGRESS
@@ -543,16 +547,20 @@ with tab_ai:
 
                     for week in prog.get("weeks", [])[:2]:
                         with st.expander(f"Week {week['week']}  — {week.get('notes', '')}"):
-                            for day in week.get("days", []):
-                                st.markdown(f"**{day.get('day', '')}** — {day.get('focus', '')}")
-                                for ex in day.get("exercises", []):
-                                    if "duration_min" in ex:
-                                        st.write(f"  • {ex['name']}: {ex.get('duration_min')} min ({ex.get('intensity', '')})")
-                                    else:
-                                        st.write(
-                                            f"  • {ex['name']}: {ex.get('sets')} × {ex.get('reps')}"
-                                            f"  — rest {ex.get('rest_sec', 60)} s"
-                                        )
+                            days = week.get("days", [])
+                            if isinstance(days, str):
+                                st.caption(days)
+                            else:
+                                for day in days:
+                                    st.markdown(f"**{day.get('day', '')}** — {day.get('focus', '')}")
+                                    for ex in day.get("exercises", []):
+                                        if "duration_min" in ex:
+                                            st.write(f"  • {ex['name']}: {ex.get('duration_min')} min ({ex.get('intensity', '')})")
+                                        else:
+                                            st.write(
+                                                f"  • {ex['name']}: {ex.get('sets')} × {ex.get('reps')}"
+                                                f"  — rest {ex.get('rest_sec', 60)} s"
+                                            )
                 except Exception as e:
                     st.error(f"Error generating program: {e}")
 

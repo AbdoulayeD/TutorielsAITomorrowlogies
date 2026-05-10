@@ -70,7 +70,8 @@ def init_db():
         # Migrate existing databases that lack the new auth columns
         existing = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
         if "email" not in existing:
-            c.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE")
+            c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL")
         if "password_hash" not in existing:
             c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
 
