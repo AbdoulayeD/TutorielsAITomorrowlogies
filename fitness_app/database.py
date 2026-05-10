@@ -4,6 +4,7 @@ All CRUD operations for users, sessions, exercises, and programs.
 """
 import sqlite3
 import json
+import bcrypt
 from datetime import date
 from pathlib import Path
 from contextlib import contextmanager
@@ -26,15 +27,17 @@ def init_db():
     with db() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS users (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT    NOT NULL,
-            age         INTEGER,
-            weight      REAL,
-            height      REAL,
-            goal        TEXT,
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT    UNIQUE,
+            password_hash TEXT,
+            name          TEXT    NOT NULL,
+            age           INTEGER,
+            weight        REAL,
+            height        REAL,
+            goal          TEXT,
             fitness_level TEXT,
-            is_premium  INTEGER DEFAULT 0,
-            created_at  TEXT    DEFAULT CURRENT_TIMESTAMP
+            is_premium    INTEGER DEFAULT 0,
+            created_at    TEXT    DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS sessions (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,14 +47,14 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
         CREATE TABLE IF NOT EXISTS exercises (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id  INTEGER NOT NULL,
-            name        TEXT    NOT NULL,
-            sets        INTEGER,
-            reps        INTEGER,
-            weight      REAL,
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id   INTEGER NOT NULL,
+            name         TEXT    NOT NULL,
+            sets         INTEGER,
+            reps         INTEGER,
+            weight       REAL,
             duration_min REAL,
-            ex_type     TEXT    DEFAULT 'strength',
+            ex_type      TEXT    DEFAULT 'strength',
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
         CREATE TABLE IF NOT EXISTS programs (
@@ -64,6 +67,41 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
         """)
+        # Migrate existing databases that lack the new auth columns
+        existing = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+        if "email" not in existing:
+            c.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE")
+        if "password_hash" not in existing:
+            c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+
+def register_user(email: str, password: str, name: str, age: int, weight: float,
+                  height: float, goal: str, level: str) -> int | None:
+    """Create a new account. Returns user id, or None if email already exists."""
+    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    try:
+        with db() as c:
+            cur = c.execute(
+                "INSERT INTO users (email,password_hash,name,age,weight,height,goal,fitness_level) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (email.lower().strip(), pw_hash, name.strip(), age, weight, height, goal, level)
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+
+
+def login_user(email: str, password: str) -> dict | None:
+    """Verify credentials. Returns user dict on success, None on failure."""
+    with db() as c:
+        row = c.execute(
+            "SELECT * FROM users WHERE email = ?", (email.lower().strip(),)
+        ).fetchone()
+    if row and row["password_hash"] and bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
+        return dict(row)
+    return None
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────

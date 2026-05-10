@@ -16,9 +16,10 @@ import pandas as pd
 from datetime import date
 
 from database import (
-    init_db, get_users, get_user, create_user, update_user,
+    init_db, get_user, update_user,
     log_session, get_sessions, log_exercise, get_session_exercises,
     get_exercise_history, save_program, get_programs, get_streak,
+    register_user, login_user,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -49,95 +50,77 @@ init_db()
 
 if "uid" not in st.session_state:
     st.session_state.uid = None
-if "show_new_profile" not in st.session_state:
-    st.session_state.show_new_profile = False
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
-# ── First-run: no users yet ─────────────────────────────────────────────────────
+# ── Auth gate ──────────────────────────────────────────────────────────────────
 
-users = get_users()
-
-if not users:
-    st.title("💪 Welcome to FitAI")
-    st.markdown("Your AI-powered fitness companion. Log workouts, track progress, and get science-based programs.")
+if not st.session_state.uid:
+    st.title("💪 FitAI")
+    st.markdown("Your AI-powered fitness companion.")
     st.divider()
-    with st.form("onboarding"):
-        st.subheader("Create your profile")
-        name = st.text_input("Your name *")
-        c1, c2 = st.columns(2)
-        age    = c1.number_input("Age",        10,  100,  25)
-        weight = c2.number_input("Weight (kg)", 30.0, 300.0, 70.0, step=0.5)
-        c3, c4 = st.columns(2)
-        height = c3.number_input("Height (cm)", 100, 250, 170)
-        level  = c4.selectbox("Fitness level", ["Beginner", "Intermediate", "Advanced"])
-        goal   = st.selectbox("Primary goal", [
-            "Build muscle",
-            "Lose weight / Fat loss",
-            "Improve endurance",
-            "Increase strength",
-            "General fitness",
-            "Athletic performance",
-            "Body recomposition",
-        ])
-        if st.form_submit_button("🚀 Start My Journey", type="primary", use_container_width=True):
-            if name.strip():
-                uid = create_user(name.strip(), age, weight, height, goal, level)
-                st.session_state.uid = uid
-                st.rerun()
-            else:
-                st.error("Please enter your name.")
+
+    tab_login, tab_register = st.tabs(["🔑 Log In", "📝 Sign Up"])
+
+    with tab_login:
+        with st.form("login_form"):
+            email    = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Log In", type="primary", use_container_width=True):
+                user = login_user(email, password)
+                if user:
+                    st.session_state.uid = user["id"]
+                    st.session_state.chat = []
+                    st.rerun()
+                else:
+                    st.error("Invalid email or password.")
+
+    with tab_register:
+        with st.form("register_form"):
+            name   = st.text_input("Full name")
+            email  = st.text_input("Email", key="reg_email")
+            pw     = st.text_input("Password", type="password", key="reg_pw")
+            pw2    = st.text_input("Confirm password", type="password")
+            c1, c2 = st.columns(2)
+            age    = c1.number_input("Age",         10,  100,  25)
+            weight = c2.number_input("Weight (kg)", 30.0, 300.0, 70.0, step=0.5)
+            c3, c4 = st.columns(2)
+            height = c3.number_input("Height (cm)", 100, 250, 170)
+            level  = c4.selectbox("Fitness level", ["Beginner", "Intermediate", "Advanced"])
+            goal   = st.selectbox("Primary goal", [
+                "Build muscle", "Lose weight / Fat loss", "Improve endurance",
+                "Increase strength", "General fitness", "Athletic performance",
+                "Body recomposition",
+            ])
+            if st.form_submit_button("🚀 Create Account", type="primary", use_container_width=True):
+                if not name.strip() or not email.strip() or not pw:
+                    st.error("Please fill in all fields.")
+                elif pw != pw2:
+                    st.error("Passwords do not match.")
+                elif len(pw) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    uid = register_user(email, pw, name, age, weight, height, goal, level)
+                    if uid:
+                        st.session_state.uid = uid
+                        st.session_state.chat = []
+                        st.rerun()
+                    else:
+                        st.error("An account with this email already exists.")
     st.stop()
 
-# ── Profile selector ────────────────────────────────────────────────────────────
-
-users = get_users()
-user_map = {f"{u['name']} {'💎' if u['is_premium'] else ''}".strip(): u["id"] for u in users}
-options  = list(user_map.keys())
-
-# Default to previously selected user
-current_idx = 0
-if st.session_state.uid:
-    try:
-        current_idx = [v for v in user_map.values()].index(st.session_state.uid)
-    except ValueError:
-        current_idx = 0
-
-col_sel, col_new = st.columns([5, 1])
-with col_sel:
-    selected_name = st.selectbox("👤", options, index=current_idx, label_visibility="collapsed")
-    st.session_state.uid = user_map[selected_name]
-
-with col_new:
-    if st.button("➕", help="New profile", use_container_width=True):
-        st.session_state.show_new_profile = not st.session_state.show_new_profile
-
-if st.session_state.show_new_profile:
-    with st.expander("➕ New Profile", expanded=True):
-        with st.form("new_profile_form"):
-            name   = st.text_input("Name")
-            c1, c2 = st.columns(2)
-            age    = c1.number_input("Age",        10,  100,  25,   key="np_a")
-            weight = c2.number_input("Weight (kg)", 30.0, 300.0, 70.0, key="np_w", step=0.5)
-            c3, c4 = st.columns(2)
-            height = c3.number_input("Height (cm)", 100, 250, 170, key="np_h")
-            level  = c4.selectbox("Level", ["Beginner", "Intermediate", "Advanced"], key="np_l")
-            goal   = st.selectbox("Goal", [
-                "Build muscle", "Lose weight / Fat loss", "Improve endurance",
-                "Increase strength", "General fitness",
-            ], key="np_g")
-            cs, cc = st.columns(2)
-            if cs.form_submit_button("Create", type="primary"):
-                if name.strip():
-                    uid = create_user(name.strip(), age, weight, height, goal, level)
-                    st.session_state.uid = uid
-                    st.session_state.show_new_profile = False
-                    st.rerun()
-            if cc.form_submit_button("Cancel"):
-                st.session_state.show_new_profile = False
-                st.rerun()
+# ── Logged-in header ───────────────────────────────────────────────────────────
 
 user = get_user(st.session_state.uid)
+
+with st.sidebar:
+    st.markdown(f"**{user['name']}**")
+    st.caption(user.get("email") or "")
+    if st.button("🚪 Log out", use_container_width=True):
+        st.session_state.uid = None
+        st.session_state.chat = []
+        st.rerun()
+
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════════
