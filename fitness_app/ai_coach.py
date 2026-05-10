@@ -1,14 +1,13 @@
 """
-AI Coach — powered by Anthropic Claude.
+AI Coach — powered by Google Gemini Flash.
 Premium features: program generation, session adaptation, coach chat.
-
-Model choice: claude-haiku-4-5 (cheap, fast) vs claude-sonnet-4-6 (best quality).
-Haiku is ~10x cheaper — recommended for most users.
 """
 import json
-from anthropic import Anthropic
+import os
+from google import genai
+from google.genai import types
 
-client = Anthropic()
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 SYSTEM = (
     "You are FitAI, an expert fitness coach with deep knowledge in exercise science, "
@@ -19,11 +18,21 @@ SYSTEM = (
 )
 
 
-def generate_program(user: dict, weeks: int = 8, model: str = "claude-haiku-4-5-20251001") -> dict:
-    """
-    Generate a full N-week personalised training program.
-    Returns a dict with program_name, description, weeks[], tips[].
-    """
+def _chat(prompt: str, model: str = "gemini-2.0-flash", json_mode: bool = False) -> str:
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM,
+        max_output_tokens=8192,
+        **({"response_mime_type": "application/json"} if json_mode else {}),
+    )
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=config,
+    )
+    return response.text
+
+
+def generate_program(user: dict, weeks: int = 8, model: str = "gemini-2.0-flash") -> dict:
     prompt = f"""Create a {weeks}-week fitness program for:
 - Age: {user['age']}, Weight: {user['weight']}kg, Height: {user['height']}cm
 - Goal: {user['goal']}
@@ -32,7 +41,7 @@ def generate_program(user: dict, weeks: int = 8, model: str = "claude-haiku-4-5-
 Apply evidence-based principles: appropriate weekly volume (sets/muscle group),
 progressive overload, exercise selection matching goal and level, deload week every 4th week.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON with this structure:
 {{
   "program_name": "...",
   "description": "2-3 sentences",
@@ -45,7 +54,7 @@ Return ONLY valid JSON:
           "day": "Monday",
           "focus": "e.g. Push / Upper / Full Body",
           "exercises": [
-            {{"name": "Bench Press", "sets": 4, "reps": "6-8", "rest_sec": 120, "notes": "control descent"}},
+            {{"name": "Bench Press", "sets": 4, "reps": "6-8", "rest_sec": 120}},
             {{"name": "Running", "duration_min": 20, "intensity": "moderate", "type": "cardio"}}
           ]
         }},
@@ -56,24 +65,12 @@ Return ONLY valid JSON:
   "tips": ["tip1", "tip2", "tip3"]
 }}
 
-Include all {weeks} weeks. Weeks 3+ may reference week 1 structure with progressive notes."""
+Include all {weeks} weeks. Limit each day to 6 exercises max to keep the response concise."""
 
-    msg = client.messages.create(
-        model=model,
-        max_tokens=3500,
-        system=SYSTEM,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    text = msg.content[0].text
-    start, end = text.find("{"), text.rfind("}") + 1
-    return json.loads(text[start:end])
+    return json.loads(_chat(prompt, model, json_mode=True))
 
 
-def adapt_program(user: dict, program: dict, missed: int, reason: str = "", model: str = "claude-haiku-4-5-20251001") -> dict:
-    """
-    Suggest a smart 7-day adaptation after missed sessions.
-    Redistributes volume, adjusts intensity, keeps the user on track.
-    """
+def adapt_program(user: dict, program: dict, missed: int, reason: str = "", model: str = "gemini-2.0-flash") -> dict:
     content_preview = json.dumps(
         program.get("content", {}).get("weeks", [{}])[0], indent=2
     )[:900]
@@ -85,7 +82,7 @@ Profile: Goal = {user['goal']}, Level = {user['fitness_level']}
 Current program (week 1 preview):
 {content_preview}
 
-Create a smart 7-day adaptation. Consider: redistribute volume, prioritize compound lifts,
+Create a smart 7-day adaptation. Redistribute volume, prioritize compound lifts,
 adjust intensity if fatigued, keep progressive overload on track.
 
 Return ONLY valid JSON:
@@ -105,22 +102,11 @@ Return ONLY valid JSON:
   ]
 }}"""
 
-    msg = client.messages.create(
-        model=model,
-        max_tokens=1400,
-        system=SYSTEM,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    text = msg.content[0].text
-    start, end = text.find("{"), text.rfind("}") + 1
-    return json.loads(text[start:end])
+    return json.loads(_chat(prompt, model, json_mode=True))
 
 
 def ask_coach(user: dict, question: str, history: list = None, recent_sessions: list = None,
-              model: str = "claude-haiku-4-5-20251001") -> str:
-    """
-    Conversational AI coach. Keeps last 4 messages for context.
-    """
+              model: str = "gemini-2.0-flash") -> str:
     profile = (
         f"User: {user['name']}, {user['age']}y, {user['weight']}kg | "
         f"Goal: {user['goal']} | Level: {user['fitness_level']}"
@@ -128,22 +114,14 @@ def ask_coach(user: dict, question: str, history: list = None, recent_sessions: 
     if recent_sessions:
         profile += f" | {len(recent_sessions)} recent sessions logged"
 
-    messages = [
-        {"role": "user", "content": f"My profile: {profile}"},
-        {"role": "assistant", "content": "Got it! I have your profile. How can I help you today?"},
-    ]
-
-    # Append last 4 conversation turns for context
+    history_text = ""
     for msg in (history or [])[-4:]:
         if msg.get("role") in ("user", "assistant"):
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            role = "User" if msg["role"] == "user" else "Coach"
+            history_text += f"{role}: {msg['content']}\n"
 
-    messages.append({"role": "user", "content": question})
+    prompt = f"""Profile: {profile}
 
-    msg = client.messages.create(
-        model=model,
-        max_tokens=700,
-        system=SYSTEM,
-        messages=messages
-    )
-    return msg.content[0].text
+{history_text}User: {question}"""
+
+    return _chat(prompt, model)

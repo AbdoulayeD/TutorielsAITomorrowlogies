@@ -519,10 +519,10 @@ with tab_ai:
         st.stop()
 
     # Check API key
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        st.error("⚠️ ANTHROPIC_API_KEY not found.  Add it to a `.env` file in this folder.")
-        st.code("ANTHROPIC_API_KEY=sk-ant-api03-…", language="bash")
+        st.error("⚠️ GEMINI_API_KEY not found. Add it to a `.env` file in this folder.")
+        st.code("GEMINI_API_KEY=AIzaSy…", language="bash")
         st.stop()
 
     from ai_coach import generate_program, adapt_program, ask_coach
@@ -540,10 +540,10 @@ with tab_ai:
         weeks        = c1.slider("Duration (weeks)", 4, 16, 8)
         model_choice = c2.selectbox(
             "AI model",
-            ["claude-haiku-4-5 — fast & cheap ✅", "claude-sonnet-4-6 — best quality"],
+            ["gemini-2.0-flash — fast & free ✅", "gemini-1.5-pro — best quality"],
         )
-        model = "claude-haiku-4-5-20251001" if "haiku" in model_choice else "claude-sonnet-4-6"
-        st.caption("💡 Haiku costs ~10× less than Sonnet — recommended unless you want maximum quality.")
+        model = "gemini-2.0-flash" if "flash" in model_choice else "gemini-1.5-pro"
+        st.caption("💡 Gemini Flash is free-tier eligible — recommended for most users.")
 
         if st.button("🚀 Generate My AI Program", type="primary", use_container_width=True):
             with st.spinner("Analysing your profile and building a science-based program… (15–30 s)"):
