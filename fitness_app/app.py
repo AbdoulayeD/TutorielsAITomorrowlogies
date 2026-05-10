@@ -19,7 +19,7 @@ from database import (
     init_db, get_user, update_user,
     log_session, get_sessions, log_exercise, get_session_exercises,
     get_exercise_history, save_program, get_programs, get_streak,
-    register_user, login_user,
+    register_user, login_user, create_auth_token, validate_auth_token, delete_auth_token,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -53,6 +53,15 @@ if "uid" not in st.session_state:
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
+# ── Restore session from URL query param ───────────────────────────────────────
+
+if not st.session_state.uid:
+    token = st.query_params.get("session")
+    if token:
+        user_from_token = validate_auth_token(token)
+        if user_from_token:
+            st.session_state.uid = user_from_token["id"]
+
 # ── Auth gate ──────────────────────────────────────────────────────────────────
 
 if not st.session_state.uid:
@@ -69,6 +78,8 @@ if not st.session_state.uid:
             if st.form_submit_button("Log In", type="primary", use_container_width=True):
                 user = login_user(email, password)
                 if user:
+                    token = create_auth_token(user["id"])
+                    st.query_params["session"] = token
                     st.session_state.uid = user["id"]
                     st.session_state.chat = []
                     st.rerun()
@@ -102,6 +113,8 @@ if not st.session_state.uid:
                 else:
                     uid = register_user(email, pw, name, age, weight, height, goal, level)
                     if uid:
+                        token = create_auth_token(uid)
+                        st.query_params["session"] = token
                         st.session_state.uid = uid
                         st.session_state.chat = []
                         st.rerun()
@@ -117,6 +130,10 @@ with st.sidebar:
     st.markdown(f"**{user['name']}**")
     st.caption(user.get("email") or "")
     if st.button("🚪 Log out", use_container_width=True):
+        token = st.query_params.get("session")
+        if token:
+            delete_auth_token(token)
+        st.query_params.clear()
         st.session_state.uid = None
         st.session_state.chat = []
         st.rerun()

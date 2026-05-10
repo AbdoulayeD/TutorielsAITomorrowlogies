@@ -4,8 +4,9 @@ All CRUD operations for users, sessions, exercises, and programs.
 """
 import sqlite3
 import json
+import uuid
 import bcrypt
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -66,6 +67,12 @@ def init_db():
             created_at  TEXT    DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            token       TEXT    PRIMARY KEY,
+            user_id     INTEGER NOT NULL,
+            expires_at  TEXT    NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
         """)
         # Migrate existing databases that lack the new auth columns
         existing = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
@@ -103,6 +110,31 @@ def login_user(email: str, password: str) -> dict | None:
     if row and row["password_hash"] and bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
         return dict(row)
     return None
+
+
+def create_auth_token(user_id: int, days: int = 30) -> str:
+    token = str(uuid.uuid4())
+    expires = (datetime.utcnow() + timedelta(days=days)).isoformat()
+    with db() as c:
+        c.execute("INSERT INTO auth_tokens (token, user_id, expires_at) VALUES (?,?,?)",
+                  (token, user_id, expires))
+    return token
+
+
+def validate_auth_token(token: str) -> dict | None:
+    """Returns user dict if token is valid and not expired, else None."""
+    with db() as c:
+        row = c.execute(
+            "SELECT u.* FROM auth_tokens t JOIN users u ON u.id = t.user_id "
+            "WHERE t.token = ? AND t.expires_at > ?",
+            (token, datetime.utcnow().isoformat())
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_auth_token(token: str):
+    with db() as c:
+        c.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────
